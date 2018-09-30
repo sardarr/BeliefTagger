@@ -2,12 +2,15 @@ import argparse
 import ast
 import os
 
+from sklearn_crfsuite import CRF
+from sklearn.feature_extraction import DictVectorizer
+
 import nltk
 import copy
 from nltk.stem.wordnet import WordNetLemmatizer
 from stanfordcorenlp import StanfordCoreNLP
 from nltk.stem.porter import *
-from nltk.tokenize import StanfordTokenizer
+# from nltk.tokenize import StanfordTokenizer
 #run the following line in terminal inside the stanford direcotry
 # java -mx4g -cp "*" edu.stanford.nlp.pipeline.StanfordCoreNLPServer -annotators "tokenize,ssplit,pos,lemma,parse,sentiment" -port 9000 -timeout 30000
 
@@ -39,8 +42,8 @@ def gen_corp(read_file):
             tmp_sent = []
     return sct_n_tag
 
-LDC_train=open("/Users/sardarhamidian/Google Drive/PHDthesis/WASSA/NewSeqTAgging/data/data_prp_main/14train.txt").readlines()
-LDC_test=open("/Users/sardarhamidian/Google Drive/PHDthesis/WASSA/NewSeqTAgging/data/data_prp_main/14test.txt").readlines()
+LDC_train=open("/Users/monadiab/Beleif/NewSeqTAgging/data/data_prp/14test_debug.txt").readlines()
+LDC_test=open("/Users/monadiab/Beleif/NewSeqTAgging/data/data_prp/14test_debug.txt").readlines()
 
 training_sentences=gen_corp(LDC_train)
 test_sentences=gen_corp(LDC_test)
@@ -197,11 +200,10 @@ def daughter(sentence,dparse,pos,index):
 
 
 
-def features(words,word_lem,sentence,pos,dparse,index,nf):
+def features(words,word_lem,sentence,pos,dparse,index,args):
     """ sentence: [w1, w2, ...], index: the index of the word """
     daughter_dict=daughter(sentence, dparse, pos, index)
     prnt_pos=parent_pos(dparse, pos, index)
-
     feature_dic= {
     'is_numeric': sentence[index].isdigit(),
     'pos':pos[index][1],
@@ -221,7 +223,7 @@ def features(words,word_lem,sentence,pos,dparse,index,nf):
     #################
     'aux_r':daughter_dict['aux_r'],
     'aux_l':daughter_dict['aux_l'], }
-    if nf==True:
+    if args['nf']==True:
         new_feature={
         ###################
         'is_first': index == 0,
@@ -249,7 +251,7 @@ from nltk.tag.util import untag
 # cutoff = int(.75 * len(tagged_sentences))
 # training_sentences = tagged_sentences[:cutoff]
 # test_sentences = tagged_sentences[cutoff:]
-def transform_to_dataset(tagged_sentences):
+def transform_to_dataset(tagged_sentences,args):
     X, y = [], []
     for tagged in tagged_sentences:
         # sent='CNN reported that Republican leader Bill Frist should have what is known to be dangerous.'
@@ -263,25 +265,32 @@ def transform_to_dataset(tagged_sentences):
         assert len(tagged)  ==  len(pos)
         dparse=nlp.dependency_parse(sent)
         word_lem= [stemmer.stem(x) for x in token]
-        nf=True
-        X.append([features(sent,word_lem,token,pos,dparse, index,nf) for index in range(len(tagged))])
+        X.append([features(sent,word_lem,token,pos,dparse, index,args) for index in range(len(tagged))])
         y.append([tag for _, tag in tagged])
     return X, y
 def pos_tag(model, sentence):
     sentence_features = [features(sentence, index) for index in range(len(sentence))]
     return list(zip(sentence, model.predict([sentence_features])[0]))
 
-def main():
+def main(arg):
 
-    X_train, y_train = transform_to_dataset(training_sentences)
-    X_test, y_test = transform_to_dataset(test_sentences)
+    X_train, y_train = transform_to_dataset(training_sentences,arg)
+    X_test, y_test = transform_to_dataset(test_sentences,arg)
     print(len(X_train))
     print(len(X_test))
     print(X_train[0])
 
-    from sklearn_crfsuite import CRF
-    model = CRF()
-    model.fit(X_train, y_train)
+    if arg['model_name']=="crf":
+        model = CRF()
+        model.fit(X_train, y_train)
+    elif arg['model_name']=="SVM":
+        v = DictVectorizer(sparse=False)
+        X_tr = v.fit_transform(X_train)
+        X_ts = v.fit_transform(X_test)
+
+
+
+
 
     sentence = ['I', 'am', 'Bob', '!']
 
@@ -291,22 +300,11 @@ def main():
 
 
 if __name__ == "__main__":
-    # parser = argparse.ArgumentParser()
-    # parser.add_argument('--tmode', type=str, default='ev',help='Transfer learning, evaluation or training regular model')
-    # parser.add_argument('--dir_input', type=str, default='None',help='Transfer learning or regular model')
-    # parser.add_argument('--ex_param', type=str, default='params/conv_param.txt',help='Transfer learning or regular model')
-
-    main()
-    # dinput="/Sardar_Summer/PhD/WASSA/NewSeqTAgging/data/test"
-    # args = parser.parse_args()
-    # # arg_path=args.args
-    # if args.ex_param:
-    #     params_file = open(args.ex_param).readlines()
-    #     firstline = params_file[0]
-    #
-    # for parami in params_file:
-    #     param = ast.literal_eval(parami)
-    #     if not os.path.exists("old_models"):
-    #         os.makedirs("old_models")
-    #     main(param)
-
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--ex_param', type=str, default='/Users/monadiab/Beleif/NewSeqTAgging/params/param_coventuion.txt',help='Transfer learning or regular model')
+    args = parser.parse_args()
+    if args.ex_param:
+        params_file = open(args.ex_param).readlines()
+    for parami in params_file:
+        param = ast.literal_eval(parami)
+        main(param)
